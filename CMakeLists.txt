@@ -15,13 +15,14 @@ add_executable(ssw main.c
         test/test_edge_cases.c
         test/test_fragmentation.c
         test/test_performance.c
-        test/test_stress.c
         storage/xxhash.h
         storage/xxhash.c
         storage/ohashtable.c
         storage/ohashtable.h
-        test/test_ohashtable.c
         test/test_benchmark4ohashtable.c
+        command/cmd_.c
+        command/cmd_.h
+        test/test_ohash.c
 )
 
 

@@ -20,7 +20,8 @@ initohash(uint64_t cap_) {
     return OK;
 }
 
-int expand_capacity(free_ free) {
+int
+expand_capacity(free_ free) {
     uint64_t n_cap = cap << 1;
 #ifndef NDEBUG
     syslog(LOG_INFO, "ohash expand capacity org %" PRIu64 ", new %" PRIu64, cap, n_cap);
@@ -57,7 +58,7 @@ int expand_capacity(free_ free) {
 }
 
 int
-oinsert(char *key, uint32_t keylen, void *v, int expira, oret_t *oret) {
+oinsert(char *key, uint32_t keylen, osv *v, uint32_t expira, oret_t *oret) {
     if (size * LOAD_FACTOR_DENOMINATOR >= cap * LOAD_FACTOR_THRESHOLD)
         return FULL;
 
@@ -91,6 +92,7 @@ oinsert(char *key, uint32_t keylen, void *v, int expira, oret_t *oret) {
         idx = (idx + 1) & (cap - 1);
     }
     return UNKNOWN_ERROR;
+
 gotoinsert:
     ohashtabl[idx].hash = hash;
     // 所有权转移 table 并不会支持分配和释放 它只负责管理所有权
@@ -105,7 +107,7 @@ gotoinsert:
 }
 
 
-void *
+osv *
 oget(char *key, uint32_t keylen) {
     long sec = get_current_time_seconds();
     uint64_t hash = XXH64(key, keylen, H_SEED);
@@ -153,6 +155,30 @@ otake(char *key, uint32_t keylen, oret_t *oret) {
                 oret->value = ohashtabl[idx].v;
                 size--;
                 break;
+            }
+        }
+        if (ohashtabl[idx].expiratime > 0 && sec >= ohashtabl[idx].expiratime)
+            ohashtabl[idx].tb = 1; // tombstone,without any deletions
+    next:
+        idx = (idx + 1) & (cap - 1);
+    }
+}
+
+
+void oexpired(char *key, uint32_t keylen, uint32_t expiratime) {
+    long sec = get_current_time_seconds();
+    uint64_t hash = XXH64(key, keylen, H_SEED);
+    uint64_t idx = hash & (cap - 1);
+    uint64_t icap = cap;
+    while (icap--) {
+        if (!ohashtabl[idx].key)
+            return;
+        if (ohashtabl[idx].tb)
+            goto next;
+        if (hash == ohashtabl[idx].hash && keylen == ohashtabl[idx].keylen) {
+            if (!memcmp(key, ohashtabl[idx].key, keylen)) {
+                ohashtabl[idx].expiratime = expiratime;
+                return;
             }
         }
         if (ohashtabl[idx].expiratime > 0 && sec >= ohashtabl[idx].expiratime)

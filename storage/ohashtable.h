@@ -34,6 +34,19 @@ typedef enum {
 } orets;
 
 /**
+ * osv 在ohash中 几乎不会被访问
+ * 但在高性能链路上 特别是v是支持大数据
+ * 那么 vlen的收益 将非常大
+ *
+ */
+struct osv {
+    uint64_t vlen;
+    char d[];
+}__attribute__((aligned(8)));
+
+typedef struct osv osv;
+
+/**
  * CRITICAL DESIGN CONSTRAINT:
  * sizeof(ohash_t) MUST BE EXACTLY 32 BYTES
  *
@@ -45,17 +58,18 @@ typedef enum {
  */
 struct ohash_t {
     uint64_t hash; // 8 字节
-    void *v; // 8 字节
     char *key; // 8 字节
+    osv *v; // 8 字节
     uint32_t tb: 1;
     uint32_t rm: 1; // is removed
     uint32_t keylen: 30;
-    unsigned int expiratime; // seconds
+    uint32_t expiratime; // seconds
 } __attribute__((aligned(8)));
+
 
 struct oret_t {
     char *key;
-    void *value;
+    osv *value;
 } __attribute__((aligned(8)));
 
 typedef struct ohash_t ohash_t;
@@ -108,7 +122,18 @@ static inline uint64_t getnext2power(uint64_t i) {
  */
 int initohash(uint64_t cap_);
 
-int oinsert(char *key, uint32_t keylen, void *v, int expira, oret_t *oret);
+int oinsert(char *key, uint32_t keylen, osv *v, uint32_t expira, oret_t *oret);
+
+/**
+ * Retrieves a value by key.
+ * NOTE: This function also performs lazy deletion of any expired items
+ * encountered during the search probe.
+ */
+osv *oget(char *key, uint32_t keylen);
+
+void otake(char *key, uint32_t keylen, oret_t *oret);
+
+void oexpired(char *key, uint32_t keylen, uint32_t expiratime);
 
 /**
  *  expand_capacity is an authorization action
@@ -117,15 +142,6 @@ int oinsert(char *key, uint32_t keylen, void *v, int expira, oret_t *oret);
  *  ohash does not violate the principle of "who creates, who destroys"
  */
 int expand_capacity(free_ free);
-
-/**
- * Retrieves a value by key.
- * NOTE: This function also performs lazy deletion of any expired items
- * encountered during the search probe.
- */
-void *oget(char *key, uint32_t keylen);
-
-void otake(char *key, uint32_t keylen, oret_t *oret);
 
 
 #endif //SSW_OHASHTABLE_H
