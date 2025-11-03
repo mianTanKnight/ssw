@@ -15,6 +15,7 @@ add_executable(ssw main.c
         test/test_edge_cases.c
         test/test_fragmentation.c
         test/test_performance.c
+        test/test_ohashtable.c
         storage/xxhash.h
         storage/xxhash.c
         storage/ohashtable.c
@@ -22,7 +23,6 @@ add_executable(ssw main.c
         test/test_benchmark4ohashtable.c
         command/cmd_.c
         command/cmd_.h
-        test/test_ohash.c
 )
 
 

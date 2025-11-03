@@ -12,6 +12,18 @@
 
 #define  MAX_KEY_LEN ((1U << 30) -1)
 #define  IS_VALID_KEY_LEN(len) ((len) > 0 && (len) <= MAX_KEY_LEN)
+
+/**
+ * However, on high-performance links, especially v, it supports big data
+ * Then value_len's profits will be very large
+ */
+struct osv {
+    uint64_t vlen;
+    char d[];
+}__attribute__((aligned(8)));
+
+typedef struct osv osv;
+
 /**
  * 四个基础命令
  * SET
@@ -19,6 +31,7 @@
  * DEL
  * EXPIRED
  */
+
 static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired,
                           const free_ free) {
 #ifndef NDEBUG
@@ -27,13 +40,13 @@ static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, ui
 #endif
     int ret = 0;
     char *key_dup = strndup(key, u30keylen);
-    if (!key_dup) {
+    if (!key_dup)
         return -ENOMEM;
-    }
+
     osv *osv_ = malloc(sizeof(osv) + vlen);
     if (!osv_) {
-        free(key_dup);
-        return -ENOMEM;
+        ret = -ENOMEM;
+        goto failure;
     }
     osv_->vlen = vlen;
     memcpy(osv_->d, v, vlen);
@@ -45,11 +58,11 @@ static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, ui
         ret = oinsert(key_dup, u30keylen, osv_, expired, &ot);
     }
     if (ret < 0) goto failure;
-
-    if (ot.key)
+    // ret >= 1  == (ret == REPLACED || ret == EXPIRED_ || ret == REMOVED)
+    if (ret) {
         free(ot.key);
-    if (ot.value)
         free(ot.value);
+    }
     return ret;
 failure:
     free(key_dup);
@@ -66,15 +79,15 @@ static inline osv *GET(char *key, uint32_t u30keylen) {
 }
 
 
-static inline int DEL(char *key, uint32_t u30keylen, const free_ free) {
+static inline int DEL(char *key, uint32_t u30keylen, const free_ free_func) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;
 #endif
     oret_t ot = {0};
     otake(key, u30keylen, &ot);
-    if (ot.key) free(ot.key);
-    if (ot.value) free(ot.value);
+    if (ot.key) free_func(ot.key);
+    if (ot.value) free_func(ot.value);
     return 0;
 }
 

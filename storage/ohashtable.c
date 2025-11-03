@@ -25,32 +25,48 @@ expand_capacity(free_ free) {
     uint64_t n_cap = cap << 1;
 #ifndef NDEBUG
     syslog(LOG_INFO, "ohash expand capacity org %" PRIu64 ", new %" PRIu64, cap, n_cap);
+    uint64_t migrated = 0, freed = 0;
 #endif
     ohash_t *n_ohash = calloc(n_cap * sizeof(ohash_t), 1);
     if (!n_ohash) return -ENOMEM;
     // Start migrating both cap and n_cap, which are powers of 2
     for (uint64_t i = 0; i < cap; i++) {
-        if (!ohashtabl[i].key) continue;
-        // 所有权已归还（rm = 1），跳过
-        if (ohashtabl[i].rm) continue;
-        // live element of live
-        if (!ohashtabl[i].tb && ohashtabl[i].key) {
+        /**
+        * rm = 0, tb = 0：活跃元素，所有权在哈希表
+        * rm = 0, tb = 1：过期元素，所有权仍在哈希表（需要释放）
+        * rm = 1, tb = 1：已删除元素，所有权已转移出去（不能释放)
+        */
+        if (!ohashtabl[i].key) continue; // NULL Slot
+
+        // Survive
+        if (!ohashtabl[i].tb && !ohashtabl[i].rm) {
             uint64_t n_idx = ohashtabl[i].hash & (n_cap - 1);
             while (1) {
                 //There is no tombstone because it is new
                 if (!n_ohash[n_idx].hash) {
                     memcpy(n_ohash + n_idx, ohashtabl + i, sizeof(ohash_t));
+#ifndef NDEBUG
+                    migrated++;
+#endif
                     break;
                 }
                 n_idx = (n_idx + 1) & (n_cap - 1);
             }
-            continue;
         }
-        if (free) {
+
+        //Die due to expiration
+        if (ohashtabl[i].tb && !ohashtabl[i].rm && free) {
+#ifndef NDEBUG
+            freed++;
+#endif
             free(ohashtabl[i].key);
             free(ohashtabl[i].v);
         }
     }
+#ifndef NDEBUG
+    syslog(LOG_INFO, "expansion complete: migrated %" PRIu64 ", freed %" PRIu64,
+           migrated, freed);
+#endif
     free(ohashtabl);
     ohashtabl = n_ohash;
     cap = n_cap;
@@ -58,17 +74,16 @@ expand_capacity(free_ free) {
 }
 
 int
-oinsert(char *key, uint32_t keylen, osv *v, uint32_t expira, oret_t *oret) {
-    if (size * LOAD_FACTOR_DENOMINATOR >= cap * LOAD_FACTOR_THRESHOLD)
-        return FULL;
-
+oinsert(char *key, uint32_t keylen, void *v, uint32_t expira, oret_t *oret) {
+    if (size * LOAD_FACTOR_DENOMINATOR >= cap * LOAD_FACTOR_THRESHOLD) return FULL;
+    int ret = OK;
     uint64_t hash = XXH64(key, keylen, H_SEED);
     uint64_t idx = hash & (cap - 1); // cap is 2 power
     // linear addressing of load-factor is 0.7
     uint64_t icap = cap;
     while (icap--) {
         if (ohashtabl[idx].tb) {
-            // 返回所有权
+            ret = ohashtabl[idx].rm ? REMOVED : EXPIRED_;
             if (oret) {
                 oret->key = ohashtabl[idx].key;
                 oret->value = ohashtabl[idx].v;
@@ -78,21 +93,17 @@ oinsert(char *key, uint32_t keylen, osv *v, uint32_t expira, oret_t *oret) {
         if (!ohashtabl[idx].key) goto gotoinsert;
         if (hash == ohashtabl[idx].hash && keylen == ohashtabl[idx].keylen) {
             if (!memcmp(key, ohashtabl[idx].key, keylen)) {
-                // 接受value 的所有权 并返回旧value的控制权
-                // key 默认拒绝接受 当 *retv 不为null时 外部需要自行处理key
                 if (oret) {
-                    oret->key = key;
+                    oret->key = ohashtabl[idx].key;
                     oret->value = ohashtabl[idx].v;
                 }
-                ohashtabl[idx].v = v;
-                ohashtabl[idx].expiratime = expira;
-                return REPLACED;
+                ret = REPLACED;
+                goto gotoinsert;
             }
         }
         idx = (idx + 1) & (cap - 1);
     }
     return UNKNOWN_ERROR;
-
 gotoinsert:
     ohashtabl[idx].hash = hash;
     // 所有权转移 table 并不会支持分配和释放 它只负责管理所有权
@@ -102,12 +113,12 @@ gotoinsert:
     ohashtabl[idx].expiratime = expira;
     ohashtabl[idx].tb = 0;
     ohashtabl[idx].rm = 0;
-    size++;
-    return OK;
+    if (ret == OK || ret == REMOVED) size++;
+    return ret;
 }
 
 
-osv *
+void *
 oget(char *key, uint32_t keylen) {
     long sec = get_current_time_seconds();
     uint64_t hash = XXH64(key, keylen, H_SEED);

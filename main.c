@@ -109,5 +109,5 @@ static int *make_value_(int val) {
     return p;
 }
 
-int main() {
-}
+// int main() {
+// }

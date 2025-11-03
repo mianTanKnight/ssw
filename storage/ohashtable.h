@@ -29,22 +29,11 @@ typedef void (*free_)(void *);
 typedef enum {
     OK = 0,
     REPLACED = 1,
+    EXPIRED_ = 2,
+    REMOVED = 3,
     FULL = -1,
     UNKNOWN_ERROR = -2,
 } orets;
-
-/**
- * osv 在ohash中 几乎不会被访问
- * 但在高性能链路上 特别是v是支持大数据
- * 那么 vlen的收益 将非常大
- *
- */
-struct osv {
-    uint64_t vlen;
-    char d[];
-}__attribute__((aligned(8)));
-
-typedef struct osv osv;
 
 /**
  * CRITICAL DESIGN CONSTRAINT:
@@ -59,7 +48,7 @@ typedef struct osv osv;
 struct ohash_t {
     uint64_t hash; // 8 字节
     char *key; // 8 字节
-    osv *v; // 8 字节
+    void *v; // 8 字节
     uint32_t tb: 1;
     uint32_t rm: 1; // is removed
     uint32_t keylen: 30;
@@ -69,7 +58,7 @@ struct ohash_t {
 
 struct oret_t {
     char *key;
-    osv *value;
+    void *value;
 } __attribute__((aligned(8)));
 
 typedef struct ohash_t ohash_t;
@@ -97,7 +86,6 @@ static inline uint64_t getnext2power(uint64_t i) {
     return i + 1;
 }
 
-
 /**
  * OWNERSHIP CONTRACT:
  *
@@ -122,14 +110,14 @@ static inline uint64_t getnext2power(uint64_t i) {
  */
 int initohash(uint64_t cap_);
 
-int oinsert(char *key, uint32_t keylen, osv *v, uint32_t expira, oret_t *oret);
+int oinsert(char *key, uint32_t keylen, void *v, uint32_t expira, oret_t *oret);
 
 /**
  * Retrieves a value by key.
  * NOTE: This function also performs lazy deletion of any expired items
  * encountered during the search probe.
  */
-osv *oget(char *key, uint32_t keylen);
+void *oget(char *key, uint32_t keylen);
 
 void otake(char *key, uint32_t keylen, oret_t *oret);
 
