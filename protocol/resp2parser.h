@@ -103,7 +103,9 @@ struct parser_context {
  */
 static inline long long
 try_parser_positive_num_str_64(const char *restrict bf, size_t len) {
-    if (!bf) return -22; // -EINVAL
+#ifndef NDEBUG
+    if (!bf) return -EINVAL;
+#endif
     if (!len) return 0;
     long long acc = 0;
     for (size_t i = 0; i < len; ++i) {
@@ -119,7 +121,9 @@ try_parser_positive_num_str_64(const char *restrict bf, size_t len) {
 
 static inline long long
 try_parser_positive_num_str(const char *restrict bf, size_t len) {
-    if (!bf) return -22; // -EINVAL
+#ifndef NDEBUG
+    if (!bf) return -EINVAL;
+#endif
     if (!len) return 0;
     long long acc = 0;
     for (size_t i = 0; i < len; ++i) {

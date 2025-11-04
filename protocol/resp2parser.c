@@ -5,8 +5,10 @@
 #include "resp2parser.h"
 
 int bindctx(struct connection_t *connection) {
-    int ret = 0;
+#ifndef NDEBUG
     if (!connection) return -EINVAL;
+#endif
+    int ret = 0;
     if (!connection->use_data) ret = create_ctx(connection);
     return ret;
 }
