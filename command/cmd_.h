@@ -36,9 +36,9 @@ typedef struct osv osv;
  * EXPIRED
  */
 
-static inline int SET4dup_(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired,
-                           const malloc_ malloc_func, const free_ free_func
-) {
+static inline int
+SET4dup_(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired,
+         const malloc_ malloc_func, const free_ free_func) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;
@@ -74,7 +74,8 @@ failure:
 }
 
 
-static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired) {
+static inline int
+SET4dup(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;
@@ -110,7 +111,8 @@ failure:
     return ret;
 }
 
-static inline osv *GET(char *key, uint32_t u30keylen) {
+static inline osv *
+GET(char *key, uint32_t u30keylen) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return NULL;
@@ -119,7 +121,8 @@ static inline osv *GET(char *key, uint32_t u30keylen) {
 }
 
 
-static inline int DEL(char *key, uint32_t u30keylen, const free_ free_func) {
+static inline int
+DEL(char *key, uint32_t u30keylen, const free_ free_func) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;
@@ -131,7 +134,8 @@ static inline int DEL(char *key, uint32_t u30keylen, const free_ free_func) {
     return 0;
 }
 
-static inline int EXPIRED(char *key, uint32_t u30keylen, const uint32_t expired) {
+static inline int
+EXPIRED(char *key, uint32_t u30keylen, const uint32_t expired) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;

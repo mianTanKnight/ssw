@@ -12,7 +12,7 @@
 // Test 1: Maximum key length boundary
 static void test_max_key_length_boundary(void) {
     TEST_START("Maximum key length boundary");
-
+#ifndef NDEBUG
     // MAX_KEY_LEN is (1U << 30) - 1 = 1073741823
     // We can't allocate that much, so test validation logic
     uint32_t max_valid = MAX_KEY_LEN;
@@ -33,13 +33,9 @@ static void test_max_key_length_boundary(void) {
         ASSERT_NOT_NULL(result, "Large key should be retrievable");
         DEL(large_key, practical_large, free);
     }
-
     free(large_key);
-
-#ifndef NDEBUG
     // In debug mode, invalid length should trigger assert
     // Skip this part in debug builds
-#else
     // In release mode, test that invalid length is rejected gracefully
     char small_key[] = "key";
     ret = SET4dup(small_key, invalid, value, strlen(value), 0);
