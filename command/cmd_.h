@@ -13,6 +13,10 @@
 #define  MAX_KEY_LEN ((1U << 30) -1)
 #define  IS_VALID_KEY_LEN(len) ((len) > 0 && (len) <= MAX_KEY_LEN)
 
+typedef void (*free_)(void *);
+
+typedef void * (*malloc_)(size_t size);
+
 /**
  * However, on high-performance links, especially v, it supports big data
  * Then value_len's profits will be very large
@@ -32,8 +36,45 @@ typedef struct osv osv;
  * EXPIRED
  */
 
-static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired,
-                          const free_ free) {
+static inline int SET4dup_(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired,
+                           const malloc_ malloc_func, const free_ free_func
+) {
+#ifndef NDEBUG
+    if (!IS_VALID_KEY_LEN(u30keylen))
+        return -EINVAL;
+#endif
+    int ret = 0;
+    char *key_dup = malloc_func(u30keylen);
+    if (!key_dup) return -ENOMEM;
+    memcpy(key_dup, key, u30keylen);
+    osv *osv_ = malloc_func(sizeof(osv) + vlen);
+    if (!osv_) {
+        ret = -ENOMEM;
+        goto failure;
+    }
+    osv_->vlen = vlen;
+    memcpy(osv_->d, v, vlen);
+    oret_t ot = {0};
+    ret = oinsert(key_dup, u30keylen, osv_, expired, &ot);
+    if (ret == FULL) {
+        if ((ret = expand_capacity(free_func)) < 0)
+            goto failure;
+        ret = oinsert(key_dup, u30keylen, osv_, expired, &ot);
+    }
+    if (ret < 0) goto failure;
+    if (ret == REPLACED || ret == EXPIRED_) {
+        free_func(ot.key);
+        free_func(ot.value);
+    }
+    return ret;
+failure:
+    free_func(key_dup);
+    free_func(osv_);
+    return ret;
+}
+
+
+static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, uint64_t vlen, const uint32_t expired) {
 #ifndef NDEBUG
     if (!IS_VALID_KEY_LEN(u30keylen))
         return -EINVAL;
@@ -58,8 +99,7 @@ static inline int SET4dup(const char *key, uint32_t u30keylen, const void *v, ui
         ret = oinsert(key_dup, u30keylen, osv_, expired, &ot);
     }
     if (ret < 0) goto failure;
-    // ret >= 1  == (ret == REPLACED || ret == EXPIRED_ || ret == REMOVED)
-    if (ret) {
+    if (ret == REPLACED || ret == EXPIRED_) {
         free(ot.key);
         free(ot.value);
     }

@@ -24,8 +24,6 @@
 #define H_SEED 20231027
 
 
-typedef void (*free_)(void *);
-
 typedef enum {
     OK = 0,
     REPLACED = 1,
@@ -129,7 +127,7 @@ void oexpired(char *key, uint32_t keylen, uint32_t expiratime);
  *  And how to handle expired elements (free function)
  *  ohash does not violate the principle of "who creates, who destroys"
  */
-int expand_capacity(free_ free);
+int expand_capacity(void *free_func);
 
 
 #endif //SSW_OHASHTABLE_H

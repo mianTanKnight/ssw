@@ -4,6 +4,7 @@
 
 #include "ohashtable.h"
 
+#include <stdio.h>
 #include <string.h>
 ohash_t *ohashtabl = NULL;
 uint64_t cap = 0;
@@ -21,7 +22,7 @@ initohash(uint64_t cap_) {
 }
 
 int
-expand_capacity(free_ free) {
+expand_capacity(void *free_func) {
     uint64_t n_cap = cap << 1;
 #ifndef NDEBUG
     syslog(LOG_INFO, "ohash expand capacity org %" PRIu64 ", new %" PRIu64, cap, n_cap);
@@ -36,7 +37,7 @@ expand_capacity(free_ free) {
         * rm = 0, tb = 1：过期元素，所有权仍在哈希表（需要释放）
         * rm = 1, tb = 1：已删除元素，所有权已转移出去（不能释放)
         */
-        if (!ohashtabl[i].key) continue; // NULL Slot
+        if (!ohashtabl[i].key && !ohashtabl[i].tb) continue; // NULL Slot
 
         // Survive
         if (!ohashtabl[i].tb && !ohashtabl[i].rm) {
@@ -53,14 +54,13 @@ expand_capacity(free_ free) {
                 n_idx = (n_idx + 1) & (n_cap - 1);
             }
         }
-
         //Die due to expiration
         if (ohashtabl[i].tb && !ohashtabl[i].rm && free) {
 #ifndef NDEBUG
             freed++;
 #endif
-            free(ohashtabl[i].key);
-            free(ohashtabl[i].v);
+            ((void (*)(void *)) free_func)(ohashtabl[i].key);
+            ((void (*)(void *)) free_func)(ohashtabl[i].v);
         }
     }
 #ifndef NDEBUG
@@ -82,15 +82,18 @@ oinsert(char *key, uint32_t keylen, void *v, uint32_t expira, oret_t *oret) {
     // linear addressing of load-factor is 0.7
     uint64_t icap = cap;
     while (icap--) {
+        if (!ohashtabl[idx].key || ohashtabl[idx].rm) {
+            if (ohashtabl[idx].rm) ret = REMOVED;
+            goto gotoinsert;
+        }
         if (ohashtabl[idx].tb) {
-            ret = ohashtabl[idx].rm ? REMOVED : EXPIRED_;
             if (oret) {
                 oret->key = ohashtabl[idx].key;
                 oret->value = ohashtabl[idx].v;
             }
+            ret = EXPIRED_;
             goto gotoinsert;
         }
-        if (!ohashtabl[idx].key) goto gotoinsert;
         if (hash == ohashtabl[idx].hash && keylen == ohashtabl[idx].keylen) {
             if (!memcmp(key, ohashtabl[idx].key, keylen)) {
                 if (oret) {
@@ -125,7 +128,7 @@ oget(char *key, uint32_t keylen) {
     uint64_t idx = hash & (cap - 1); // cap is 2 power
     uint64_t icap = cap;
     while (icap--) {
-        if (!ohashtabl[idx].key)
+        if (!ohashtabl[idx].key && !ohashtabl[idx].tb)
             goto notfound;
         if (ohashtabl[idx].tb)
             goto next;
@@ -154,7 +157,7 @@ otake(char *key, uint32_t keylen, oret_t *oret) {
     uint64_t idx = hash & (cap - 1); // cap is 2 power
     uint64_t icap = cap;
     while (icap--) {
-        if (!ohashtabl[idx].key)
+        if (!ohashtabl[idx].key && !ohashtabl[idx].tb)
             return;
         if (ohashtabl[idx].tb)
             goto next;
@@ -164,6 +167,8 @@ otake(char *key, uint32_t keylen, oret_t *oret) {
                 ohashtabl[idx].tb = 1;
                 oret->key = ohashtabl[idx].key;
                 oret->value = ohashtabl[idx].v;
+                ohashtabl[idx].key = NULL;
+                ohashtabl[idx].v = NULL;
                 size--;
                 break;
             }
@@ -182,7 +187,7 @@ void oexpired(char *key, uint32_t keylen, uint32_t expiratime) {
     uint64_t idx = hash & (cap - 1);
     uint64_t icap = cap;
     while (icap--) {
-        if (!ohashtabl[idx].key)
+        if (!ohashtabl[idx].key && !ohashtabl[idx].tb)
             return;
         if (ohashtabl[idx].tb)
             goto next;
