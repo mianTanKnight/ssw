@@ -6,8 +6,8 @@
 // Edge Cases & Error Handling Tests
 //
 
-#include "test_framework.h"
-#include "../protocol/resp2parser.h"
+#include "test_protocol_framework.h"
+#include "../include/resp2parser.h"
 #include  "string.h"
 
 // ============================================================================

@@ -4,8 +4,9 @@
 
 #ifndef SSW_RESP2PARSER_H
 #define SSW_RESP2PARSER_H
-#include "../server_/noblock_sserver.h"
-#include <limits.h>
+#include "noblock_sserver.h"
+#include "limits.h"
+#include "errno.h"
 
 #if LLONG_MAX == 9223372036854775807LL
 #define try_parser_num try_parser_positive_num_str_64
@@ -319,7 +320,7 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
         if (prefix == '$' && !ctx->prog.have_bulk_len) {
             long long dlen = try_parser_num(anchorpoint + 1, next_crlf_len);
             if (dlen < 0) {
-                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol",ctx->connection->fd);
+                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol", ctx->connection->fd);
                 ret = -EPROTO;
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
@@ -359,13 +360,13 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
         if (prefix == '*') {
             long long arraylen = try_parser_num(anchorpoint + 1, next_crlf_len);
             if (arraylen < 0) {
-                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol",ctx->connection->fd);
+                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol", ctx->connection->fd);
                 ret = -EPROTO;
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
             }
             if (arraylen >= ARRAY_SIZE_MAX) {
-                syslog(LOG_WARNING, "[%d]proceed error : invalid number to long of $ protocol",ctx->connection->fd);
+                syslog(LOG_WARNING, "[%d]proceed error : invalid number to long of $ protocol", ctx->connection->fd);
                 ret = -EMSGSIZE; // EMSGSIZE 需要外部特殊处理
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
@@ -418,13 +419,14 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
             if (!ctx->prog.have_bulk_len) {
                 long long dlen = try_parser_num(anchorpoint_start + 1, next_crlf_len);
                 if (dlen < 0) {
-                    syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol",ctx->connection->fd);
+                    syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol", ctx->connection->fd);
                     ret = -EPROTO;
                     consumed = i + next_crlf_len_end;
                     goto errorpprotocol;
                 }
                 if (dlen >= BUFFER_SIZE_MAX) {
-                    syslog(LOG_WARNING, "[%d]:proceed error : invalid number to long of $ protocol",ctx->connection->fd);
+                    syslog(LOG_WARNING, "[%d]:proceed error : invalid number to long of $ protocol",
+                           ctx->connection->fd);
                     ret = -EMSGSIZE; // EMSGSIZE 需要外部特殊处理
                     consumed = i + next_crlf_len_end;
                     goto errorpprotocol;
@@ -461,13 +463,13 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
         if (prefix_waiting == '*') {
             long long arraylen = try_parser_num(anchorpoint_start + 1, next_crlf_len);
             if (arraylen < 0) {
-                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol",ctx->connection->fd);
+                syslog(LOG_WARNING, "[%d]:proceed error : invalid number of $ protocol", ctx->connection->fd);
                 ret = -EPROTO;
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
             }
             if (arraylen >= ARRAY_SIZE_MAX) {
-                syslog(LOG_WARNING, "[%d]:proceed error : invalid number to long of $ protocol",ctx->connection->fd);
+                syslog(LOG_WARNING, "[%d]:proceed error : invalid number to long of $ protocol", ctx->connection->fd);
                 ret = -EMSGSIZE; // EMSGSIZE 需要外部特殊处理
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;

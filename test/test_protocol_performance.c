@@ -2,8 +2,8 @@
 // Performance & Benchmark Tests
 //
 
-#include "test_framework.h"
-#include "../protocol/resp2parser.h"
+#include "test_protocol_framework.h"
+#include "../include/resp2parser.h"
 #include <time.h>
 #include <sys/time.h>
 
@@ -477,31 +477,31 @@ void test_perf_comparison_with_copy(void) {
     TEST_PASS();
 }
 
-// void run_performance_tests(void) {
-//     TEST_SUITE_START("Performance & Benchmark Tests");
-//
-//     printf("\n" COLOR_YELLOW "  Note: Performance tests may take a while...\n" COLOR_RESET);
-//
-//     // Single frame performance
-//     test_perf_simple_string();
-//     test_perf_integer();
-//     test_perf_bulk_string_small();
-//     test_perf_bulk_string_large();
-//     test_perf_array_header();
-//
-//     // Complex protocol
-//     test_perf_redis_set_command();
-//     test_perf_nested_array();
-//
-//     // Throughput
-//     test_perf_throughput_mixed();
-//
-//     // Latency distribution
-//     test_perf_latency_distribution();
-//
-//     // Zero-copy verification
-//     test_perf_zero_copy_verification();
-//     test_perf_comparison_with_copy();
-//
-//     TEST_SUITE_END();
-// }
+void run_performance_tests(void) {
+    TEST_SUITE_START("Performance & Benchmark Tests");
+
+    printf("\n" COLOR_YELLOW "  Note: Performance tests may take a while...\n" COLOR_RESET);
+
+    // Single frame performance
+    test_perf_simple_string();
+    test_perf_integer();
+    test_perf_bulk_string_small();
+    test_perf_bulk_string_large();
+    test_perf_array_header();
+
+    // Complex protocol
+    test_perf_redis_set_command();
+    test_perf_nested_array();
+
+    // Throughput
+    test_perf_throughput_mixed();
+
+    // Latency distribution
+    test_perf_latency_distribution();
+
+    // Zero-copy verification
+    test_perf_zero_copy_verification();
+    test_perf_comparison_with_copy();
+
+    TEST_SUITE_END();
+}

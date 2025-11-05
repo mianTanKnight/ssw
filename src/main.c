@@ -1,12 +1,11 @@
 #include <stdio.h>
-#include "protocol/resp2parser.h"
-#include "server_/noblock_sserver.h"
-#include "storage/xxhash.h"
-#include "test/test_framework.h"
+#include "../include/resp2parser.h"
+#include "../include/noblock_sserver.h"
+#include "../include/xxhash.h"
+#include "../test/test_protocol_framework.h"
 #define XXH_INLINE_ALL
-#include "storage/xxhash.h"
-#include "storage/ohashtable.h"
-#include "storage/ohashtable.h"
+#include "xxhash.h"
+#include "ohashtable.h"
 
 int test_on_read(struct connection_t *ct) {
     int ret = 0;
@@ -109,5 +108,5 @@ static int *make_value_(int val) {
     return p;
 }
 
-// int main() {
-// }
+int main() {
+}

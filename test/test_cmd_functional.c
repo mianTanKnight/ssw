@@ -3,8 +3,8 @@
 // Tests: SET, GET, DEL, EXPIRED operations with correctness guarantees
 //
 
-#include "test_framework.h"
-#include "../command/cmd_.h"
+#include "test_common_framework.h"
+#include "../include/cmd_.h"
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>

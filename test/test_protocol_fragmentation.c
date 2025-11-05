@@ -2,8 +2,8 @@
 // Fragmentation & Packet Splitting Tests (拆包/粘包测试)
 //
 
-#include "test_framework.h"
-#include "../protocol/resp2parser.h"
+#include "test_protocol_framework.h"
+#include "../include/resp2parser.h"
 #include "stdio.h"
 
 // ============================================================================

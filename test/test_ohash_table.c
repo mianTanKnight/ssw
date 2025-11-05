@@ -28,62 +28,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <unistd.h> // for sleep()
-#include "../storage/ohashtable.h"
-
-
-// --- Test Framework Macros ---
-#define GREEN "\033[0;32m"
-#define RED   "\033[0;31m"
-#define NC    "\033[0m"
-
-static int tests_passed = 0;
-static int tests_total = 0;
-
-#define RUN_TEST(test_func) do { \
-    tests_total++; \
-    printf("[ RUN      ] %s\n", #test_func); \
-    setup(); \
-    test_func(); \
-    teardown(); \
-    printf("[       " GREEN "OK" NC " ] %s\n", #test_func); \
-    tests_passed++; \
-} while (0)
-
-// --- Helper Functions ---
-
-// Setup and Teardown for each test
-void setup() {
-    initohash(16); // Start with a small capacity
-}
-
-void teardown() {
-    // This is a simplified teardown. A real one might need a free_func.
-    // We assume the test itself cleans up what it creates.
-    free(ohashtabl);
-    ohashtabl = NULL;
-    cap = 0;
-    size = 0;
-}
-
-// Proxy free function to test expand_capacity
-void free_key_value_pair(void* ptr) {
-    // In our tests, keys and values are simple strings from strdup/malloc
-    free(ptr);
-}
-
-// Data factories
-char* make_key(const char* base, int i) {
-    char buf[64];
-    sprintf(buf, "%s_%d", base, i);
-    return strdup(buf);
-}
-
-void* make_value(const char* base, int i) {
-    char buf[64];
-    sprintf(buf, "%s_val_%d", base, i);
-    return strdup(buf);
-}
+#include <unistd.h>
+#include "test_ohash_framework.h"
 
 // --- Test Cases ---
 
@@ -94,14 +40,14 @@ void test_init_and_destroy() {
 }
 
 void test_basic_insert_get() {
-    char* key1 = make_key("key", 1);
-    void* val1 = make_value("val", 1);
+    char *key1 = make_key("key", 1);
+    void *val1 = make_value("val", 1);
 
     int ret = oinsert(key1, strlen(key1), val1, -1, NULL);
     assert(ret == OK);
     assert(size == 1);
 
-    void* found_val = oget(key1, strlen(key1));
+    void *found_val = oget(key1, strlen(key1));
     assert(found_val == val1);
     assert(strcmp((char*)found_val, "val_val_1") == 0);
 
@@ -113,9 +59,9 @@ void test_basic_insert_get() {
 }
 
 void test_insert_replace() {
-    char* key1 = make_key("key", 1);
-    void* val1 = make_value("val", 1);
-    void* val2 = make_value("val", 2);
+    char *key1 = make_key("key", 1);
+    void *val1 = make_value("val", 1);
+    void *val2 = make_value("val", 2);
 
     oinsert(key1, strlen(key1), val1, -1, NULL);
 
@@ -127,7 +73,7 @@ void test_insert_replace() {
     assert(ot.key == key1); // Should return the OLD key
     assert(ot.value == val1); // Should return the OLD value
 
-    void* found_val = oget(key1, strlen(key1));
+    void *found_val = oget(key1, strlen(key1));
     assert(found_val == val2); // Value should be updated
 
     // Clean up old key/value returned from replace
@@ -142,8 +88,8 @@ void test_insert_replace() {
 }
 
 void test_take_ownership() {
-    char* key1 = make_key("key", 1);
-    void* val1 = make_value("val", 1);
+    char *key1 = make_key("key", 1);
+    void *val1 = make_value("val", 1);
     oinsert(key1, strlen(key1), val1, -1, NULL);
     assert(size == 1);
 
@@ -154,29 +100,31 @@ void test_take_ownership() {
     assert(ot.key == key1);
     assert(ot.value == val1);
 
-    void* found_val = oget(key1, strlen(key1));
+    void *found_val = oget(key1, strlen(key1));
     assert(found_val == NULL); // Should not be found
 
     // Caller is now responsible for freeing
     free(ot.key);
     free(ot.value);
 }
+
 void test_tombstone_probing() {
     // This test is CRITICAL for open addressing.
     // It ensures that tombstones correctly act as bridges for probe chains.
 
-    char* key_base = make_key("key", 1);
-    void* val_base = make_value("val", 1);
+    char *key_base = make_key("key", 1);
+    void *val_base = make_value("val", 1);
 
     uint64_t base_idx = XXH64(key_base, strlen(key_base), H_SEED) & (cap - 1);
 
-    char* key_collide = NULL;
-    void* val_collide = NULL;
+    char *key_collide = NULL;
+    void *val_collide = NULL;
 
     // --- FIX: Brute-force search for a colliding key ---
-    printf("  Searching for a colliding key for index %llu...\n", (unsigned long long)base_idx);
-    for (int i = 2; i < 10000; ++i) { // Search up to 10000 keys
-        char* temp_key = make_key("key", i);
+    printf("  Searching for a colliding key for index %llu...\n", (unsigned long long) base_idx);
+    for (int i = 2; i < 10000; ++i) {
+        // Search up to 10000 keys
+        char *temp_key = make_key("key", i);
         if ((XXH64(temp_key, strlen(temp_key), H_SEED) & (cap - 1)) == base_idx) {
             key_collide = temp_key;
             val_collide = make_value("val", i);
@@ -202,7 +150,7 @@ void test_tombstone_probing() {
     assert(size == 1);
 
     // The probe chain MUST still work. We MUST be able to find the colliding key.
-    void* found_val = oget(key_collide, strlen(key_collide));
+    void *found_val = oget(key_collide, strlen(key_collide));
     assert(found_val == val_collide);
 
     // Cleanup
@@ -212,15 +160,15 @@ void test_tombstone_probing() {
 }
 
 void test_expiration() {
-    char* key1 = make_key("key", 1);
-    void* val1 = make_value("val", 1);
+    char *key1 = make_key("key", 1);
+    void *val1 = make_value("val", 1);
 
     unsigned int expiry_time = get_current_time_seconds() + 1;
     oinsert(key1, strlen(key1), val1, expiry_time, NULL);
 
     sleep(2); // Wait for item to expire
 
-    void* found_val = oget(key1, strlen(key1));
+    void *found_val = oget(key1, strlen(key1));
     assert(found_val == NULL); // Should return NULL as it's expired
     assert(size == 1); // Size doesn't change until take/insert
 
@@ -239,11 +187,12 @@ void test_manual_expansion() {
     // Insert until FULL is returned
     int items_inserted = 0;
     for (int i = 0; ; ++i) {
-        char* k = make_key("k", i);
-        void* v = make_value("v", i);
+        char *k = make_key("k", i);
+        void *v = make_value("v", i);
         if (oinsert(k, strlen(k), v, -1, NULL) == FULL) {
             printf("  FULL returned after %d successful insertions.\n", items_inserted);
-            free(k); free(v);
+            free(k);
+            free(v);
             break;
         }
         items_inserted++;
@@ -273,8 +222,8 @@ void test_manual_expansion() {
     }
 
     // Now, we can insert more
-    char* k_new = make_key("k", items_inserted);
-    void* v_new = make_value("v", items_inserted);
+    char *k_new = make_key("k", items_inserted);
+    void *v_new = make_value("v", items_inserted);
     ret = oinsert(k_new, strlen(k_new), v_new, -1, NULL);
     assert(ret == OK);
     // --- FIX: Size should be one more than before ---
@@ -292,8 +241,12 @@ void test_expansion_cleans_tombstones() {
     }
     // 2. Create some tombstones
     oret_t ot = {0};
-    otake("k_1", 3, &ot); free(ot.key); free(ot.value);
-    otake("k_3", 3, &ot); free(ot.key); free(ot.value);
+    otake("k_1", 3, &ot);
+    free(ot.key);
+    free(ot.value);
+    otake("k_3", 3, &ot);
+    free(ot.key);
+    free(ot.value);
     assert(size == 3);
 
     // 3. Expand
@@ -306,48 +259,3 @@ void test_expansion_cleans_tombstones() {
         }
     }
 }
-
-
-// --- Main Test Runner ---
-// int main() {
-//     printf("\n"
-//            "╔════════════════════════════════════════════════════════╗\n"
-//            "║  ohashtable Comprehensive Test Suite                  ║\n"
-//            "╚════════════════════════════════════════════════════════╝\n\n");
-//
-//     printf("=== Basic Functionality ===\n");
-//     RUN_TEST(test_init_and_destroy);
-//     RUN_TEST(test_basic_insert_get);
-//     RUN_TEST(test_insert_replace);
-//     RUN_TEST(test_take_ownership);
-//
-//     printf("\n=== Tombstone & Probing Chain ===\n");
-//     RUN_TEST(test_tombstone_probing);
-//
-//     printf("\n=== Expiration ===\n");
-//     RUN_TEST(test_expiration);
-//
-//     printf("\n=== Expansion ===\n");
-//     RUN_TEST(test_manual_expansion);
-//     RUN_TEST(test_expansion_cleans_tombstones);
-//
-//
-//     printf("\n"
-//            "╔════════════════════════════════════════════════════════╗\n"
-//            "║  Test Summary                                          ║\n"
-//            "╠════════════════════════════════════════════════════════╣\n"
-//            "║  Total:   %-3d                                         ║\n"
-//            "║  Passed:  %-3d                                         ║\n"
-//            "║  Failed:  %-3d                                         ║\n"
-//            "╚════════════════════════════════════════════════════════╝\n\n",
-//            tests_total, tests_passed, tests_total - tests_passed);
-//
-//     if (tests_passed != tests_total) {
-//         return 1;
-//     }
-//
-//     // A final check to ensure all memory from helpers is cleaned up in tests
-//     // For a real framework, this would be more robust.
-//
-//     return 0;
-// }

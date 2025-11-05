@@ -1,12 +1,10 @@
 //
-// Created by wenshen on 2025/10/22.
+// Common Test Framework for All SSW Test Suites
+// Provides unified macros, statistics tracking, and reporting
 //
 
-//
-// Professional Test Framework for RESP2 Parser
-//
-#ifndef TEST_FRAMEWORK_H
-#define TEST_FRAMEWORK_H
+#ifndef TEST_COMMON_FRAMEWORK_H
+#define TEST_COMMON_FRAMEWORK_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +12,6 @@
 #include <assert.h>
 #include <time.h>
 #include <sys/time.h>
-#include "../protocol/resp2parser.h"
 
 // ANSI Color codes
 #define COLOR_RESET   "\033[0m"
@@ -25,6 +22,11 @@
 #define COLOR_MAGENTA "\033[0;35m"
 #define COLOR_CYAN    "\033[0;36m"
 #define COLOR_BOLD    "\033[1m"
+
+// Alternative names for compatibility
+#define GREEN COLOR_GREEN
+#define RED   COLOR_RED
+#define NC    COLOR_RESET
 
 // Test statistics
 typedef struct {
@@ -203,55 +205,4 @@ static inline void print_test_report(void) {
     }
 }
 
-// Helper function: setup test context
-static inline void setup_test_context(struct connection_t *cn,
-                                      struct parser_context *ctx,
-                                      const char *data,
-                                      size_t len) {
-    memset(cn, 0, sizeof(*cn));
-    cn->read_buffer = (char *) malloc(len + 1);
-    assert(cn->read_buffer);
-    memcpy(cn->read_buffer, data, len);
-    cn->read_buffer[len] = '\0';
-    cn->rb_size = len;
-    cn->rb_offset = 0;
-
-    memset(ctx, 0, sizeof(*ctx));
-    ctx->connection = cn;
-    ctx->state = COMPLETE;
-}
-
-// Helper function: cleanup test context
-static inline void cleanup_test_context(struct connection_t *cn) {
-    if (cn->read_buffer) {
-        free(cn->read_buffer);
-        cn->read_buffer = NULL;
-    }
-}
-
-// Helper function: feed data incrementally (for fragmentation tests)
-static inline void feed_data(struct connection_t *cn, const char *data, size_t len) {
-    size_t new_size = cn->rb_size + len;
-    char *new_buf = realloc(cn->read_buffer, new_size + 1);
-    assert(new_buf);
-
-    memcpy(new_buf + cn->rb_size, data, len);
-    new_buf[new_size] = '\0';
-
-    cn->read_buffer = new_buf;
-    cn->rb_size = new_size;
-}
-
-void run_basic_tests(void);
-
-void run_array_tests(void);
-
-void run_edge_case_tests(void);
-
-void run_fragmentation_tests(void);
-
-void run_performance_tests(void);
-
-void run_stress_tests(void);
-
-#endif // TEST_FRAMEWORK_H
+#endif // TEST_COMMON_FRAMEWORK_H

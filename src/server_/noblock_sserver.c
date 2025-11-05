@@ -4,6 +4,8 @@
 
 #include "noblock_sserver.h"
 
+#include <errno.h>
+
 
 struct connection_pool *create_pool(const unsigned init_cap) {
     if (!init_cap) return NULL;

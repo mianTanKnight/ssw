@@ -6,8 +6,8 @@
 // Array Protocol Tests
 //
 
-#include "test_framework.h"
-#include "../protocol/resp2parser.h"
+#include "test_protocol_framework.h"
+#include "../include/resp2parser.h"
 
 void test_array_empty(void) {
     TEST_START("Array: empty *0\\r\\n");

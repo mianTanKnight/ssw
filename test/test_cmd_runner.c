@@ -3,8 +3,8 @@
 // Runs all test suites and generates comprehensive report
 //
 
-#include "test_framework.h"
-#include "../storage/ohashtable.h"
+#include "test_common_framework.h"
+#include "../include/ohashtable.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,15 +12,9 @@
 
 // External test suite declarations
 extern void run_cmd_functional_tests(void);
-
 extern void run_cmd_memory_tests(void);
-
 extern void run_cmd_performance_tests(void);
-
 extern void run_cmd_stress_tests(void);
-
-// Global statistics tracking
-extern test_stats_t g_stats;
 
 static void print_banner(void) {
     printf("\n");

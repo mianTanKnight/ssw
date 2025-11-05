@@ -4,8 +4,8 @@
 // Basic Protocol Tests
 //
 
-#include "test_framework.h"
-#include "../protocol/resp2parser.h"
+#include "test_protocol_framework.h"
+#include "../include/resp2parser.h"
 
 void test_simple_string_ok(void) {
     TEST_START("Simple String: +OK\\r\\n");

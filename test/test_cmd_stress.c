@@ -3,8 +3,8 @@
 // Tests: Boundary conditions, extreme inputs, robustness under pressure
 //
 
-#include "test_framework.h"
-#include "../command/cmd_.h"
+#include "test_common_framework.h"
+#include "../include/cmd_.h"
 #include <string.h>
 #include <assert.h>
 #include <limits.h>

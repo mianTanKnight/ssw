@@ -8,7 +8,7 @@
 
 #include "string.h"
 
-#include "../storage/ohashtable.h"
+#include "ohashtable.h"
 
 #define  MAX_KEY_LEN ((1U << 30) -1)
 #define  IS_VALID_KEY_LEN(len) ((len) > 0 && (len) <= MAX_KEY_LEN)
