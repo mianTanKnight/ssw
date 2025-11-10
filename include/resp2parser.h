@@ -97,6 +97,22 @@ struct parser_context {
     struct parser_process prog; // 解析进度
 };
 
+#define  MAX_ARRAY_STACK_DEEP 5
+#define  MAX_ARRAY_ELEMENTS_SIZE 5
+
+struct command_context {
+    unsigned int layers_cursor: 3; // max -> 111  >= COMMAND_MAX_ARRAY_DEEP
+    unsigned int consumed: 1;
+
+    struct layer_state {
+        struct element {
+        } elements[MAX_ARRAY_ELEMENTS_SIZE];
+    } layers[MAX_ARRAY_STACK_DEEP];
+
+    protocol_type type;
+};
+
+
 /*********************** inline of hot path ******************************/
 /**
  *  accₖ = Σ_{i=0}^{k−1} dᵢ · 10^{k−1−i}
