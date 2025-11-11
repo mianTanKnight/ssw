@@ -62,29 +62,43 @@ struct parser_process {
 };
 
 /**
- * @brief RESP2协议解析器的核心上下文。
+ * @brief RESP2协议解析器的分帧层上下文 (Framing Layer Context)。
+ * @details
+ *      这是两阶段解析流水线的第一阶段。它的核心角色是一个高性能、无状态的
+ *      “分帧器”或“词法分析器”(Tokenizer)。
+ *
+ *      其唯一职责，就是将无结构的TCP字节流，高效、精确地切割成一个个独立的、
+ *      符合RESP2协议语法的原子单元（“帧”），并作为 `outframe` 输出。
+ *
+ * --- 核心设计原则 ---
  *
  * 1.  **零拷贝 (Zero-Copy)**:
- *     解析出的数据帧(outframe)中的指针直接指向原始读缓冲区(read_buffer)，
- *     避免任何内存拷贝，以实现极致性能。
+ *     为实现极致性能，解析出的 `outframe` 中的指针直接指向原始读缓冲区
+ *     (`connection->read_buffer`)，杜绝任何内存拷贝。整个流水线中的数据流转
+ *     本质上是指针的传递。
  *
  * 2.  **流式分帧 (Streaming & Framing)**:
- *     解析器不关心业务逻辑或数据结构，其唯一职责是将TCP字节流精确地切分为
- *     一个个独立的RESP协议单元（帧）。数据结构的组织由上层调用者负责。
+ *     本上下文不关心命令的逻辑结构（如一个数组命令需要几个元素）。它以“不中断”
+ *     的模式工作，只要缓冲区有数据，就会持续地产出帧。这种设计将协议的物理层
+ *     解析与逻辑层聚合完全解耦。
  *
  * 3.  **线性数组处理 (Linear Array Handling)**:
- *     为保证栈安全，数组按“帧”来线性解析。
- *     - 遇到 "*3\r\n"，解析器返回一个类型为 ARRAYS 的帧，告知上层“接下来有3个元素”。
- *     - 上层需要循环调用解析器3次，以依次获取每个元素帧。
- *     - 这种方式天然支持任意深度的数组嵌套。
+ *     为保证栈安全并简化设计，数组被当作“指令”来处理。
+ *     - 遇到 "*3\r\n"，解析器仅返回一个类型为 ARRAYS 的“数组头帧”，告知
+ *       流水线的下一阶段：“接下来有3个元素”。
+ *     - 它将状态化跟踪数组元素的复杂性，完全委托给下一阶段（如 segment_context）。
  *
- * --- 调用模式 ---
+ * --- 驱动模式 ---
+ *      `zerocopy_proceed` 由I/O事件驱动，在一个循环中被连续调用，以耗尽
+ *      读缓冲区中所有可形成帧的数据。
+ *
  * for (;;) {
  *     ret = zerocopy_proceed(ctx);
  *     if (ctx->state == COMPLETE && ret == 0) {
- *         // 解析成功一个帧，处理 ctx->outframe
+ *         // 成功切割出一个帧，将其传递给下一阶段（聚合器）
+ *         feed_to_aggregator(&ctx->outframe);
  *     } else {
- *         // 数据不足(WAITING)或出错，跳出循环等待更多数据
+ *         // 数据不足(WAITING)或出错，退出循环，等待下一次I/O事件
  *         break;
  *     }
  * }
@@ -100,16 +114,59 @@ struct parser_context {
 #define  MAX_ARRAY_STACK_DEEP 5
 #define  MAX_ARRAY_ELEMENTS_SIZE 5
 
-struct command_context {
-    unsigned int layers_cursor: 3; // max -> 111  >= COMMAND_MAX_ARRAY_DEEP
-    unsigned int consumed: 1;
+
+/**
+ * @brief RESP2命令聚合层上下文 (Command Aggregation Layer Context)。
+ * @details
+ *      这是两阶段解析流水线的第二阶段。如果说 `parser_context` 是“词法分析器”，
+ *      那么 `segment_context` 就是“语法分析器”(Syntactic Analyzer)。
+ *
+ *      它的核心职责是消费上游 `parser_context` 产出的一系列原子帧 (`parser_out`)，
+ *      并根据RESP协议的语法规则，将它们组装成一个逻辑上完整的命令。
+ *
+ * --- 架构角色与数据流 ---
+ *
+ *      本上下文是一个被动的、事件驱动的状态机。它不直接参与I/O，仅对输入的帧做出响应。
+ *      完整的数据处理流水线如下：
+ *
+ *      [I/O Event] -> read() -> [zerocopy_proceed] --(produces Frame)--> [segment_context]
+ *                                                                               |
+ *                                                              (is_command_complete?)--YES--> [Business Logic]
+ *
+ * --- 工作原理 ---
+ *
+ * 1.  **状态化聚合 (Stateful Aggregation)**:
+ *     与分帧器不同，本上下文是强状态化的。它必须记住当前正在构建的命令的结构。
+ *     例如，当接收到一个 "*3\r\n" 帧后，它会记录下“当前层级需要3个元素”这一状态。
+ *
+ * 2.  **显式栈管理 (Explicit Stack Management)**:
+ *     `layers` 数组作为一个显式栈，`layers_cursor` 作为栈指针，用于安全地处理
+ *     任意深度的嵌套数组。
+ *     - 接收到数组头帧 `*N\r\n` -> “入栈”，`layers_cursor` 递增。
+ *     - 当前层级元素聚合完毕 -> “出栈”，`layers_cursor` 递减。
+ *
+ * 3.  **就绪信号 (Readiness Signal)**:
+ *     当一个顶层命令被完整聚合后（通常是 `layers_cursor` 归零），`consumed` 标志位
+ *     被置为1。这个标志就是给最终业务逻辑的“命令就绪”信号，表明可以安全地消费
+ *     这个已聚合的命令。
+ *
+ * @note `struct element` 的定义是实现此聚合逻辑的关键。它必须被定义，用于在 `layers`
+ *       栈中存储每个已接收元素的信息（类型、指向数据的指针和长度）。
+ */
+struct segment_context {
+    unsigned layers_cursor: 3; // max -> 111  >= COMMAND_MAX_ARRAY_DEEP
+    unsigned consumed: 1;
 
     struct layer_state {
+        unsigned expect_count;
+        unsigned arrive_count;
+
         struct element {
+            protocol_type type;
+            size_t len;
+            void *data;
         } elements[MAX_ARRAY_ELEMENTS_SIZE];
     } layers[MAX_ARRAY_STACK_DEEP];
-
-    protocol_type type;
 };
 
 
@@ -249,6 +306,31 @@ static inline void clear_prog(struct parser_context *ctx) {
     ctx->prog.have_bulk_len = 0;
     ctx->prog.prefix = 0;
     ctx->prog.head_len = 0;
+}
+
+
+static inline int segment_proceed(struct segment_context *stx, struct parser_out *outframe) {
+    if (stx->consumed) stx->layers_cursor = 0; //游标归位
+
+    protocol_type type = outframe->type;
+    // Arrays 帧不是数据帧 它是长度帧栈游标控制
+    if (type == ARRAYS) {
+        size_t len = outframe->array_len;
+        if (len > MAX_ARRAY_ELEMENTS_SIZE || len < 0) {
+#ifndef NDEBUG
+            syslog(LOG_ERR, "fatal error :MAX_ARRAY_ELEMENTS_SIZE Out");
+#endif
+            return -EPIPE;
+        }
+        stx->layers[stx->layers_cursor].expect_count = len;
+        stx->layers_cursor++;
+    }
+
+
+
+segment_completed:
+    stx->consumed = 1;
+    return 0;
 }
 
 /**
