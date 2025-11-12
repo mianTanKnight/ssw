@@ -68,7 +68,7 @@ struct element {
     char *data;
 };
 
-struct segment_context {
+struct simple_segment_context {
     uint8_t element_count; // 已接收元素数
     uint8_t expected_count; // 期望元素数（数组长度）
     uint8_t consumed: 1; // 命令是否完整
@@ -125,6 +125,7 @@ struct parser_context {
     // 输出与进度
     struct parser_out outframe; // 当前帧数据
     struct parser_process prog; // 解析进度
+    struct simple_segment_context segment_context;
 };
 
 #define  MAX_ARRAY_STACK_DEEP 5
@@ -270,50 +271,50 @@ static inline void clear_prog(struct parser_context *ctx) {
 }
 
 
-// Nested arrays are not supported
-
-static inline int segment_proceed(struct segment_context *stx,
-                                  struct parser_out *outframe) {
-    if (outframe->type == ARRAYS) {
-        if (stx->in_array) {
+// Nested arrays that are not supported now do not need to be supported either
+static inline int segment_proceed(struct parser_context *ctx) {
+    struct simple_segment_context stx = ctx->segment_context;
+    struct parser_out outframe = ctx->outframe;
+    if (outframe.type == ARRAYS) {
+        if (stx.in_array) {
             return -EPROTO;
         }
-        if (outframe->array_len > MAX_ARRAY_ELEMENTS) {
-            return -E2BIG;
+        if (outframe.array_len > MAX_ARRAY_ELEMENTS) {
+            return -EPROTO;
         }
-        if (outframe->array_len < 0) {
-            return -EINVAL;
+        if (outframe.array_len < 0) {
+            return -EPROTO;
         }
-        stx->expected_count = outframe->array_len;
-        stx->element_count = 0;
-        stx->in_array = 1;
-        stx->consumed = 0;
+        stx.expected_count = outframe.array_len;
+        stx.element_count = 0;
+        stx.in_array = 1;
+        stx.consumed = 0;
 
-        if (outframe->array_len == 0) {
-            stx->consumed = 1;
-            stx->in_array = 0;
+        if (outframe.array_len == 0) {
+            stx.consumed = 1;
+            stx.in_array = 0;
         }
         return 0;
     }
-    if (!stx->in_array) {
-        stx->expected_count = 1;
-        stx->element_count = 0;
-        stx->in_array = 1;
-        stx->consumed = 0;
+    if (!stx.in_array) {
+        stx.expected_count = 1;
+        stx.element_count = 0;
+        stx.in_array = 1;
+        stx.consumed = 0;
     }
-    if (stx->consumed) {
-        stx->consumed = 0;
-        stx->in_array = 1;
-        stx->expected_count = 1;
-        stx->element_count = 0;
+    if (stx.consumed) {
+        stx.consumed = 0;
+        stx.in_array = 1;
+        stx.expected_count = 1;
+        stx.element_count = 0;
     }
-    stx->elements[stx->element_count].type = outframe->type;
-    stx->elements[stx->element_count].len = outframe->data_len;
-    stx->elements[stx->element_count].data = outframe->start_rbp;
-    stx->element_count++;
-    if (stx->element_count == stx->expected_count) {
-        stx->consumed = 1;
-        stx->in_array = 0;
+    stx.elements[stx.element_count].type = outframe.type;
+    stx.elements[stx.element_count].len = outframe.data_len;
+    stx.elements[stx.element_count].data = outframe.start_rbp;
+    stx.element_count++;
+    if (stx.element_count == stx.expected_count) {
+        stx.consumed = 1;
+        stx.in_array = 0;
     }
     return 0;
 }
