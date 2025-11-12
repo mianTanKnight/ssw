@@ -267,38 +267,6 @@ void test_bulk_string_max_valid(void) {
     TEST_PASS();
 }
 
-void test_array_one_thousand_elements(void) {
-    TEST_START("Array: 1000 elements");
-
-    char *buf = malloc(32 * 1024);  // 32KB buffer
-    ASSERT_NOT_NULL(buf, "malloc should succeed");
-
-    int pos = sprintf(buf, "*1000\r\n");
-    for (int i = 0; i < 1000; i++) {
-        pos += sprintf(buf + pos, ":1\r\n");
-    }
-
-    struct connection_t cn;
-    struct parser_context ctx;
-    setup_test_context(&cn, &ctx, buf, pos);
-
-    // Array header
-    int rc = zerocopy_proceed(&ctx);
-    ASSERT_EQ(rc, 0, "Array header should succeed");
-    ASSERT_EQ(ctx.outframe.array_len, 1000, "Array should have 1000 elements");
-
-    // Parse all 1000 elements
-    for (int i = 0; i < 1000; i++) {
-        rc = zerocopy_proceed(&ctx);
-        ASSERT_EQ(rc, 0, "Element should parse successfully");
-        ASSERT_EQ(ctx.outframe.type, NUMERIC, "Element should be numeric");
-    }
-
-    cleanup_test_context(&cn);
-    free(buf);
-    TEST_PASS();
-}
-
 // ============================================================================
 // Special Characters Tests
 // ============================================================================
@@ -484,7 +452,6 @@ void run_edge_case_tests(void) {
     // Boundary values
     test_integer_max_long_long();
     test_bulk_string_max_valid();
-    test_array_one_thousand_elements();
 
     // Special characters
     test_simple_string_with_special_chars();

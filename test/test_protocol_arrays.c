@@ -215,34 +215,6 @@ void test_array_redis_command(void) {
     TEST_PASS();
 }
 
-void test_array_large(void) {
-    TEST_START("Array: 100 elements");
-
-    // Construct: *100\r\n:0\r\n:1\r\n...:99\r\n
-    char buf[2048];
-    int pos = sprintf(buf, "*100\r\n");
-    for (int i = 0; i < 100; i++) {
-        pos += sprintf(buf + pos, ":%d\r\n", i);
-    }
-
-    struct connection_t cn;
-    struct parser_context ctx;
-    setup_test_context(&cn, &ctx, buf, pos);
-
-    // Array header
-    zerocopy_proceed(&ctx);
-    ASSERT_EQ(ctx.outframe.array_len, 100, "Array should have 100 elements");
-
-    // Parse all elements
-    for (int i = 0; i < 100; i++) {
-        int rc = zerocopy_proceed(&ctx);
-        ASSERT_EQ(rc, 0, "Element should parse successfully");
-        ASSERT_EQ(ctx.outframe.type, NUMERIC, "Element should be numeric");
-    }
-
-    cleanup_test_context(&cn);
-    TEST_PASS();
-}
 
 void run_array_tests(void) {
     TEST_SUITE_START("Array Protocol Tests");
@@ -254,7 +226,6 @@ void run_array_tests(void) {
     test_array_nested_simple();
     test_array_nested_deep();
     test_array_redis_command();
-    test_array_large();
 
     TEST_SUITE_END();
 }

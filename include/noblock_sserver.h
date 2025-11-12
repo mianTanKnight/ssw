@@ -20,7 +20,6 @@
 
 #define BUFFER_SIZE_DEFAULT 1024
 #define BUFFER_SIZE_MAX  (1024* 1024 * 1024) // 1G
-#define ARRAY_SIZE_MAX (1024 * 1024)
 
 typedef void (*ufree)(void *);
 

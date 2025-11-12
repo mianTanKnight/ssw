@@ -13,7 +13,7 @@
 #else
 #define try_parser_num try_parser_positive_num_str
 #endif
-
+#define MAX_ARRAY_ELEMENTS 50
 /**
  * state 处理拆粘包的状态
  * 它不需要太复杂的状态
@@ -60,6 +60,22 @@ struct parser_process {
     long long bulk_len; // 解析后的 <len>
     size_t head_len; // "$<len>\\r\\n" 的长度
 };
+
+
+struct element {
+    protocol_type type;
+    uint16_t len;
+    char *data;
+};
+
+struct segment_context {
+    uint8_t element_count; // 已接收元素数
+    uint8_t expected_count; // 期望元素数（数组长度）
+    uint8_t consumed: 1; // 命令是否完整
+    uint8_t in_array: 1; // 是否在数组中
+    struct element elements[MAX_ARRAY_ELEMENTS];
+};
+
 
 /**
  * @brief RESP2协议解析器的分帧层上下文 (Framing Layer Context)。
@@ -113,61 +129,6 @@ struct parser_context {
 
 #define  MAX_ARRAY_STACK_DEEP 5
 #define  MAX_ARRAY_ELEMENTS_SIZE 5
-
-
-/**
- * @brief RESP2命令聚合层上下文 (Command Aggregation Layer Context)。
- * @details
- *      这是两阶段解析流水线的第二阶段。如果说 `parser_context` 是“词法分析器”，
- *      那么 `segment_context` 就是“语法分析器”(Syntactic Analyzer)。
- *
- *      它的核心职责是消费上游 `parser_context` 产出的一系列原子帧 (`parser_out`)，
- *      并根据RESP协议的语法规则，将它们组装成一个逻辑上完整的命令。
- *
- * --- 架构角色与数据流 ---
- *
- *      本上下文是一个被动的、事件驱动的状态机。它不直接参与I/O，仅对输入的帧做出响应。
- *      完整的数据处理流水线如下：
- *
- *      [I/O Event] -> read() -> [zerocopy_proceed] --(produces Frame)--> [segment_context]
- *                                                                               |
- *                                                              (is_command_complete?)--YES--> [Business Logic]
- *
- * --- 工作原理 ---
- *
- * 1.  **状态化聚合 (Stateful Aggregation)**:
- *     与分帧器不同，本上下文是强状态化的。它必须记住当前正在构建的命令的结构。
- *     例如，当接收到一个 "*3\r\n" 帧后，它会记录下“当前层级需要3个元素”这一状态。
- *
- * 2.  **显式栈管理 (Explicit Stack Management)**:
- *     `layers` 数组作为一个显式栈，`layers_cursor` 作为栈指针，用于安全地处理
- *     任意深度的嵌套数组。
- *     - 接收到数组头帧 `*N\r\n` -> “入栈”，`layers_cursor` 递增。
- *     - 当前层级元素聚合完毕 -> “出栈”，`layers_cursor` 递减。
- *
- * 3.  **就绪信号 (Readiness Signal)**:
- *     当一个顶层命令被完整聚合后（通常是 `layers_cursor` 归零），`consumed` 标志位
- *     被置为1。这个标志就是给最终业务逻辑的“命令就绪”信号，表明可以安全地消费
- *     这个已聚合的命令。
- *
- * @note `struct element` 的定义是实现此聚合逻辑的关键。它必须被定义，用于在 `layers`
- *       栈中存储每个已接收元素的信息（类型、指向数据的指针和长度）。
- */
-struct segment_context {
-    unsigned layers_cursor: 3; // max -> 111  >= COMMAND_MAX_ARRAY_DEEP
-    unsigned consumed: 1;
-
-    struct layer_state {
-        unsigned expect_count;
-        unsigned arrive_count;
-
-        struct element {
-            protocol_type type;
-            size_t len;
-            void *data;
-        } elements[MAX_ARRAY_ELEMENTS_SIZE];
-    } layers[MAX_ARRAY_STACK_DEEP];
-};
 
 
 /*********************** inline of hot path ******************************/
@@ -309,29 +270,54 @@ static inline void clear_prog(struct parser_context *ctx) {
 }
 
 
-static inline int segment_proceed(struct segment_context *stx, struct parser_out *outframe) {
-    if (stx->consumed) stx->layers_cursor = 0; //游标归位
+// Nested arrays are not supported
 
-    protocol_type type = outframe->type;
-    // Arrays 帧不是数据帧 它是长度帧栈游标控制
-    if (type == ARRAYS) {
-        size_t len = outframe->array_len;
-        if (len > MAX_ARRAY_ELEMENTS_SIZE || len < 0) {
-#ifndef NDEBUG
-            syslog(LOG_ERR, "fatal error :MAX_ARRAY_ELEMENTS_SIZE Out");
-#endif
-            return -EPIPE;
+static inline int segment_proceed(struct segment_context *stx,
+                                  struct parser_out *outframe) {
+    if (outframe->type == ARRAYS) {
+        if (stx->in_array) {
+            return -EPROTO;
         }
-        stx->layers[stx->layers_cursor].expect_count = len;
-        stx->layers_cursor++;
+        if (outframe->array_len > MAX_ARRAY_ELEMENTS) {
+            return -E2BIG;
+        }
+        if (outframe->array_len < 0) {
+            return -EINVAL;
+        }
+        stx->expected_count = outframe->array_len;
+        stx->element_count = 0;
+        stx->in_array = 1;
+        stx->consumed = 0;
+
+        if (outframe->array_len == 0) {
+            stx->consumed = 1;
+            stx->in_array = 0;
+        }
+        return 0;
     }
-
-
-
-segment_completed:
-    stx->consumed = 1;
+    if (!stx->in_array) {
+        stx->expected_count = 1;
+        stx->element_count = 0;
+        stx->in_array = 1;
+        stx->consumed = 0;
+    }
+    if (stx->consumed) {
+        stx->consumed = 0;
+        stx->in_array = 1;
+        stx->expected_count = 1;
+        stx->element_count = 0;
+    }
+    stx->elements[stx->element_count].type = outframe->type;
+    stx->elements[stx->element_count].len = outframe->data_len;
+    stx->elements[stx->element_count].data = outframe->start_rbp;
+    stx->element_count++;
+    if (stx->element_count == stx->expected_count) {
+        stx->consumed = 1;
+        stx->in_array = 0;
+    }
     return 0;
 }
+
 
 /**
  * @brief       在读缓冲区(read_buffer)上向前推进RESP2协议解析。
@@ -463,7 +449,7 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
             }
-            if (arraylen >= ARRAY_SIZE_MAX) {
+            if (arraylen >= MAX_ARRAY_ELEMENTS) {
                 syslog(LOG_WARNING, "[%d]proceed error : invalid number to long of $ protocol", ctx->connection->fd);
                 ret = -EMSGSIZE; // EMSGSIZE 需要外部特殊处理
                 consumed = i + next_crlf_len_end;
@@ -566,7 +552,7 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
                 consumed = i + next_crlf_len_end;
                 goto errorpprotocol;
             }
-            if (arraylen >= ARRAY_SIZE_MAX) {
+            if (arraylen >= MAX_ARRAY_ELEMENTS) {
                 syslog(LOG_WARNING, "[%d]:proceed error : invalid number to long of $ protocol", ctx->connection->fd);
                 ret = -EMSGSIZE; // EMSGSIZE 需要外部特殊处理
                 consumed = i + next_crlf_len_end;
