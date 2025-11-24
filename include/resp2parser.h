@@ -128,9 +128,6 @@ struct parser_context {
     struct simple_segment_context segment_context;
 };
 
-#define  MAX_ARRAY_STACK_DEEP 5
-#define  MAX_ARRAY_ELEMENTS_SIZE 5
-
 
 /*********************** inline of hot path ******************************/
 /**
@@ -271,50 +268,53 @@ static inline void clear_prog(struct parser_context *ctx) {
 }
 
 
-// Nested arrays that are not supported now do not need to be supported either
-static inline int segment_proceed(struct parser_context *ctx) {
-    struct simple_segment_context stx = ctx->segment_context;
-    struct parser_out outframe = ctx->outframe;
-    if (outframe.type == ARRAYS) {
-        if (stx.in_array) {
+// Design note:
+//   We intentionally support ONLY one-dimensional RESP arrays:
+//     *N <elem1><elem2>...<elemN>
+//   Rationale:
+//     - 99.9% of commands are flat argv lists (CMD, KEY, VALUE, ...)
+//     - Supporting nested arrays would require heap allocations and
+//       tree structures, which breaks our simple/small/fast philosophy.
+//   Therefore:
+//     - Nested arrays are rejected with -EPROTO.
+static inline int segment_proceed(struct simple_segment_context *stx, struct parser_out *outframe) {
+    if (outframe->type == ARRAYS) {
+        if (stx->in_array)
             return -EPROTO;
-        }
-        if (outframe.array_len > MAX_ARRAY_ELEMENTS) {
+        if (outframe->array_len > MAX_ARRAY_ELEMENTS)
             return -EPROTO;
-        }
-        if (outframe.array_len < 0) {
+        if (outframe->array_len < 0)
             return -EPROTO;
-        }
-        stx.expected_count = outframe.array_len;
-        stx.element_count = 0;
-        stx.in_array = 1;
-        stx.consumed = 0;
+        stx->expected_count = outframe->array_len;
+        stx->element_count = 0;
+        stx->in_array = 1;
+        stx->consumed = 0;
 
-        if (outframe.array_len == 0) {
-            stx.consumed = 1;
-            stx.in_array = 0;
+        if (outframe->array_len == 0) {
+            stx->consumed = 1;
+            stx->in_array = 0;
         }
         return 0;
     }
-    if (!stx.in_array) {
-        stx.expected_count = 1;
-        stx.element_count = 0;
-        stx.in_array = 1;
-        stx.consumed = 0;
+    if (!stx->in_array) {
+        stx->expected_count = 1;
+        stx->element_count = 0;
+        stx->in_array = 1;
+        stx->consumed = 0;
     }
-    if (stx.consumed) {
-        stx.consumed = 0;
-        stx.in_array = 1;
-        stx.expected_count = 1;
-        stx.element_count = 0;
+    if (stx->consumed) {
+        stx->consumed = 0;
+        stx->in_array = 1;
+        stx->expected_count = 1;
+        stx->element_count = 0;
     }
-    stx.elements[stx.element_count].type = outframe.type;
-    stx.elements[stx.element_count].len = outframe.data_len;
-    stx.elements[stx.element_count].data = outframe.start_rbp;
-    stx.element_count++;
-    if (stx.element_count == stx.expected_count) {
-        stx.consumed = 1;
-        stx.in_array = 0;
+    stx->elements[stx->element_count].type = outframe->type;
+    stx->elements[stx->element_count].len = outframe->data_len;
+    stx->elements[stx->element_count].data = outframe->start_rbp;
+    stx->element_count++;
+    if (stx->element_count == stx->expected_count) {
+        stx->consumed = 1;
+        stx->in_array = 0;
     }
     return 0;
 }
@@ -384,7 +384,8 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
             ctx->prog.prefix = prefix;
             goto waitingout;
         }
-        long long next_crlf_len = get_next_crlf_memchr_inline(anchorpoint + 1, remaining);
+        size_t cap = (cn->read_buffer + cn->rb_size) - (anchorpoint + 1);
+        long long next_crlf_len = get_next_crlf_memchr_inline(anchorpoint + 1, cap);
         if (next_crlf_len < 0) {
             ctx->prog.prefix = prefix;
             goto waitingout;
@@ -480,8 +481,8 @@ static inline int zerocopy_proceed(struct parser_context *ctx) {
             }
             if (!prefix_waiting) goto waitingout;
         }
-
-        long long next_crlf_len = get_next_crlf_memchr_inline(anchorpoint_start + 1, remaining);
+        size_t cap = (cn->read_buffer + cn->rb_size) - (anchorpoint_start + 1);
+        long long next_crlf_len = get_next_crlf_memchr_inline(anchorpoint_start + 1, cap);
         if (next_crlf_len < 0) {
             ctx->prog.prefix = prefix_waiting;
             goto waitingout;

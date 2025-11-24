@@ -55,7 +55,7 @@ expand_capacity(void *free_func) {
             }
         }
         //Die due to expiration
-        if (ohashtabl[i].tb && !ohashtabl[i].rm && free) {
+        if (ohashtabl[i].tb && !ohashtabl[i].rm && free_func) {
 #ifndef NDEBUG
             freed++;
 #endif
